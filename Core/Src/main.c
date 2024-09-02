@@ -149,7 +149,7 @@ void EEPROM_Error_print (uint8_t event_error, uint8_t event_adress, uint8_t eepr
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-const char *firmware_number = "01.45";
+const char *firmware_number = "01.47";
 
 const uint16_t delay_message_info = 2100;
 
@@ -424,6 +424,7 @@ int main(void)
 	if (lcd_drive_screen_update > 0 && lcd_drive_execute >= (lcd_drive_screen_update * lcd_drive_screen_update_mult))
 	{
 		lcd_drive_screen_print(lcd_offset_start_x, lcd_offset_start_y);
+		lcd_main_screen_print(lcd_offset_start_x, lcd_offset_start_y, time_format_print, Service_Temp(ADC_channel_Temp_select, Temp_cor), Vbat_cor);
 		lcd_drive_millis_prev = HAL_GetTick();
 	}
 
@@ -459,6 +460,8 @@ int main(void)
 		SSD1306_set_mid_pos(&Font_7x10, 0, lcd_font_7_line_1, lcd_buff);
 		SSD1306_UpdateScreen();
 		HAL_Delay (lcd_delay_print_setup);
+
+		BUTTON_IF_Actions_stop();
 
 		static uint8_t menu_number = 0;
 		do
@@ -626,6 +629,8 @@ int main(void)
 		Service_lcd_light(Ilm_start, light_min, light_max);
 		SSD1306_Clear();
 		}while(menu_number < 22);
+
+		BUTTON_IF_Actions_stop();
 	}
 
 	//*********************************Сервисы*********************************
@@ -1148,8 +1153,7 @@ void Service_Engine_Hours()
 			SSD1306_set_mid_pos(&Font_7x10, 0, SSD1306_HEIGHT / 2 - 3, lcd_buff);
 			SSD1306_UpdateScreen();
 			Delay_int_button(message_service_delay);
-			SSD1306_Clear();
-			HAL_Delay(delay_blank_screen);
+			BUTTON_IF_Actions_stop();
 		}
 	}
 }
@@ -1187,7 +1191,7 @@ int8_t Service_Temp(uint8_t Temp_ADC_port, int8_t Temp_cor)
 			while (ADC_temp_ext > Temp_sensor_b3950[1][Temp_sensor_counter] && Temp_sensor_counter < Temp_sensor_table - 1)
 			{Temp_sensor_counter++;}
 
-			// интерполяция между соседними точками
+			// �?нтерполяция между соседними точками
 			Temp_return = interpol(ADC_temp_ext, Temp_sensor_b3950[1][Temp_sensor_counter - 1], Temp_sensor_b3950[1][Temp_sensor_counter], Temp_sensor_b3950[0][Temp_sensor_counter - 1], Temp_sensor_b3950[0][Temp_sensor_counter]);
 
 			// LM335
@@ -1302,7 +1306,7 @@ void Service_Control_Bat_Voltage(int8_t Vbat_cor)
 				}
 
 
-				if (BUTTON_Get_Prev_Actions(BUTTON_HS) != BUTTON_NOT_ACTION || BUTTON_Get_Prev_Actions(BUTTON_MS) != BUTTON_NOT_ACTION)
+				if (BUTTON_Get_Actions(BUTTON_HS) != BUTTON_NOT_ACTION || BUTTON_Get_Actions(BUTTON_MS) != BUTTON_NOT_ACTION)
 				{
 					Button_check_warning = true;
 
@@ -1612,11 +1616,6 @@ uint8_t menu_setup()
 
 	SSD1306_Clear();
 
-    while (BUTTON_Get_Actions(BUTTON_MS) != BUTTON_NOT_ACTION)
-    {
-    }
-
-	//
 	uint8_t menu_lines_on_page;
 
 	do
@@ -1836,6 +1835,9 @@ uint16_t Service_Rest_Warning(uint8_t time_trigger, int8_t lcd_offset_start_x, i
 		SSD1306_set_mid_pos(&Font_11x18, 0, lcd_offset_start_y + 35, lcd_buff);
 		SSD1306_UpdateScreen();
 		Delay_int_button(Rest_Warning_screen_delay);
+
+		BUTTON_IF_Actions_stop();
+
 		lcd_update_seconds_prev = RTC_Seconds;
 		SSD1306_Clear();
 		HAL_Delay(delay_blank_screen);
@@ -1992,9 +1994,9 @@ void lcd_drive_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y
 	// Обновить экран.
 	SSD1306_UpdateScreen();
 
-	if (Delay_int_button(Delay_screen_drive) > 0)
+	if (Delay_screen_drive > 0)
 	{
-		HAL_Delay(delay_message_info);
+		Delay_int_button(delay_message_info);
 	}
 
 	// Очистить строку времени
@@ -2140,16 +2142,20 @@ void lcd_line_set (uint8_t poz_x, uint8_t poz_y, uint8_t line)
 
 uint16_t Delay_int_button(uint16_t delay_ms)
 {
-	while (delay_ms > 0)
+
+	uint32_t tickstart = 0U;
+
+	tickstart = HAL_GetTick();
+
+	while (BUTTON_Get_Actions(BUTTON_HS) == BUTTON_NOT_ACTION && BUTTON_Get_Actions(BUTTON_MS) == BUTTON_NOT_ACTION)
 	{
-		if (BUTTON_Get_Prev_Actions(BUTTON_HS) != BUTTON_NOT_ACTION || BUTTON_Get_Prev_Actions(BUTTON_MS) != BUTTON_NOT_ACTION)
+		if ((HAL_GetTick() - tickstart) > delay_ms)
 		{
-			break;
+		  return 0;
 		}
-		HAL_Delay(1);
-		delay_ms--;
 	}
-	return delay_ms;
+
+	return (HAL_GetTick() - tickstart);
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
