@@ -149,7 +149,7 @@ extern void BUTTON_IF_Actions_stop()
 		// Если хоть одно значение не равно BUTTON_NOT_ACTION, то обнулить счётчик
 		if (Button_Current_Action[port_counter] != BUTTON_NOT_ACTION)
 		{
-			port_counter = 0;
+			port_counter = 255;
 		}
 	}
 
