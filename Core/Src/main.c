@@ -149,7 +149,7 @@ void EEPROM_Error_print (uint8_t event_error, uint8_t event_adress, uint8_t eepr
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-const char *firmware_number = "01.47";
+const char *firmware_number = "01.50";
 
 const uint16_t delay_message_info = 2100;
 
@@ -880,7 +880,7 @@ static void MX_RTC_Init(void)
 	  {
 	  }
 
-	  while (HAL_RTC_Init(&hrtc) != HAL_OK)
+	  if (HAL_RTC_Init(&hrtc) != HAL_OK)
 	  {
 		Error_Handler();
 	  }
@@ -1867,7 +1867,7 @@ void lcd_on_off(uint8_t LCD_Light_Current)
 
     SSD1306_ON();
 
-	for(uint8_t Light_up = 0; Light_up <= LCD_Light_Current; Light_up++)
+	for(uint8_t Light_up = 0; Light_up < LCD_Light_Current; Light_up++)
 	{
 		SSD1306_Light(Light_up);
 		HAL_Delay(Light_change_delay);

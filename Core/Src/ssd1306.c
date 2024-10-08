@@ -163,9 +163,11 @@ void SSD1306_DrawBitmap(int16_t x, int16_t y, const unsigned char* bitmap, int16
 uint8_t SSD1306_Init(void) {
 
 	/* Init I2C */
-	HAL_Delay(1);
-	//ssd1306_I2C_Init();
 	
+    for (uint32_t timer = 700; timer > 0; timer--)
+    {
+    }
+
 	SSD1306.Initialized = 0;
 	/* Check if LCD connected to I2C */
 	if (HAL_I2C_IsDeviceReady(&hi2c1, SSD1306_I2C_ADDR, 1, 20000) != HAL_OK) {
