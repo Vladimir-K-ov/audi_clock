@@ -149,7 +149,7 @@ void EEPROM_Error_print (uint8_t event_error, uint8_t event_adress, uint8_t eepr
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-const char *firmware_number = "01.51";
+const char *firmware_number = "01.52";
 
 const uint16_t delay_message_info = 2100;
 
@@ -265,7 +265,6 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -1117,7 +1116,7 @@ void HAL_RTCEx_RTCEventCallback(RTC_HandleTypeDef *hrtc)
 
 void Service_Engine_Hours()
 {
-	const char *Text_service = "Service !";
+	const char *Text_service = "Service!";
 
 	const uint16_t message_service_delay = 10000;
 
@@ -1147,7 +1146,7 @@ void Service_Engine_Hours()
 		{
 			SSD1306_Clear();
 			sprintf(lcd_buff,"%s",Text_service);
-			SSD1306_set_mid_pos(&Font_7x10, 0, SSD1306_HEIGHT / 2 - 3, lcd_buff);
+			SSD1306_set_mid_pos(&Font_11x18, 0, SSD1306_HEIGHT / 2 - 8, lcd_buff);
 			SSD1306_UpdateScreen();
 			Delay_int_button(message_service_delay);
 			BUTTON_IF_Actions_stop();

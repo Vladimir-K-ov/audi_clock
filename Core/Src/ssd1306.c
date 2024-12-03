@@ -162,10 +162,18 @@ void SSD1306_DrawBitmap(int16_t x, int16_t y, const unsigned char* bitmap, int16
 
 uint8_t SSD1306_Init(void) {
 
+	// Reset дисплея
+	// Если до этого он был инициализирован то выполнить сброс с более длительной задержкой
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_RESET);
-	HAL_Delay(2);
+	if (SSD1306.Initialized == 1)
+	{
+		HAL_Delay(30);
+	}else
+	{
+		HAL_Delay(2);
+	}
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_SET);
-	HAL_Delay(1);
+	HAL_Delay(5);
 
 	SSD1306.Initialized = 0;
 	/* Check if LCD connected to I2C */
@@ -642,12 +650,14 @@ void ssd1306_I2C_WriteMulti(uint8_t address, uint8_t reg, uint8_t* data, uint16_
 	uint8_t i;
 	for(i = 0; i < count; i++)
 	dt[i+1] = data[i];
-	// Если передача данных завершилась с ошибкой, то выполнить переинициализацию
+	// Если передача данных завершилась с ошибкой, то выполнить переинициализацию и повторить попытку
 	if (HAL_I2C_Master_Transmit(&hi2c1, address, dt, count+1, 10) != HAL_OK)
 	{
-		SSD1306.Initialized = 0;
-		SSD1306.DeviceReady = 0;
 		SSD1306_Init();
+		if (SSD1306.Initialized == 1)
+		{
+			HAL_I2C_Master_Transmit(&hi2c1, address, dt, count+1, 10);
+		}
 	}
 }
 
@@ -656,11 +666,13 @@ void ssd1306_I2C_Write(uint8_t address, uint8_t reg, uint8_t data) {
 	uint8_t dt[2];
 	dt[0] = reg;
 	dt[1] = data;
-	// Если передача данных завершилась с ошибкой, то выполнить переинициализацию
+	// Если передача данных завершилась с ошибкой, то выполнить переинициализацию и повторить попытку
 	if (HAL_I2C_Master_Transmit(&hi2c1, address, dt, 2, 10) != HAL_OK)
 	{
-		SSD1306.Initialized = 0;
-		SSD1306.DeviceReady = 0;
 		SSD1306_Init();
+		if (SSD1306.Initialized == 1)
+		{
+			HAL_I2C_Master_Transmit(&hi2c1, address, dt, 2, 10);
+		}
 	}
 }
