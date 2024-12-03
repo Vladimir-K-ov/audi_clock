@@ -149,7 +149,7 @@ void EEPROM_Error_print (uint8_t event_error, uint8_t event_adress, uint8_t eepr
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-const char *firmware_number = "01.50";
+const char *firmware_number = "01.51";
 
 const uint16_t delay_message_info = 2100;
 
@@ -227,7 +227,7 @@ const int8_t RTC_Prescaler_max = 0;
 const uint8_t Poz_line_time_y = 10;
 
 const uint8_t time_format_print_min = 0;
-const uint8_t time_format_print_max = 2;
+const uint8_t time_format_print_max = 3;
 
 // Номер регистра бэкап для моточасов
 const uint32_t Sec_BKP_reg_Low = 1;
@@ -236,8 +236,6 @@ const uint32_t Sec_BKP_reg_Hi = 2;
 const uint8_t Engine_Hourse_Mul = 10;
 
 char lcd_buff[25] = "";
-
-uint8_t ADC_Ready = 0;
 
 uint32_t RTC_Seconds = 0;
 
@@ -398,7 +396,7 @@ int main(void)
 	BUTTON_Action_Freeze(30);
 
 	// Обновление основного экрана
-	const int16_t lcd_main_screen_update = 400;
+	const uint16_t lcd_main_screen_update = 400;
 
 	uint32_t lcd_update_millis_current = 0;
 	uint32_t lcd_update_execute = 0;
@@ -813,7 +811,6 @@ static void MX_I2C1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN I2C1_Init 2 */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_SET);
   SSD1306_Init();
   /* USER CODE END I2C1_Init 2 */
 
@@ -1338,12 +1335,18 @@ uint16_t Get_ADC(uint8_t channel)
 	uint16_t newVal[adc_lenght] = {0};
 	uint16_t adc[adc_lenght] = {0};
 
-	ADC_Ready = 0;
-	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&newVal, adc_lenght); // Запуск АЦП.
+	// Таймер выдержки времени перехода готовности АЦП
+	const uint16_t ADC_BUSY_TIMEOUT = 5;
+	uint32_t ADC_BUSY_TIME_STEP = HAL_GetTick();
 
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&newVal, adc_lenght); // Запуск АЦП.
 	// Ожидание завершения АЦП
-    while(!ADC_Ready)
+    while (hadc1.DMA_Handle->State == HAL_DMA_STATE_BUSY)
     {
+    	if ((HAL_GetTick() - ADC_BUSY_TIME_STEP) > ADC_BUSY_TIMEOUT)
+    	{
+    		return 0;
+    	}
     }
 
 	for (uint8_t Table_counter = 0; Table_counter < adc_lenght; Table_counter++)
@@ -1907,6 +1910,15 @@ void Set_RTC_m_up()
 
 void lcd_main_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y, uint8_t lcd_time_format, int8_t Temp , int8_t Vbat_cor)
 {
+	// Стереть дисплей если изменилась переменная стиля формата
+	static uint8_t lcd_time_format_prev;
+
+	if (lcd_time_format != lcd_time_format_prev)
+	{
+		SSD1306_Clear();
+		lcd_time_format_prev = lcd_time_format;
+	}
+
 	float adc_volt[1] = {0};
 	adc_volt[0] = Get_ADC(ADC_channel_Vbat) * Step_Vref_Volt_Div;
 
@@ -1927,7 +1939,7 @@ void lcd_main_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y,
 		lcd_offset_prev_y = lcd_offset_start_y;
 	}
 
-	// Тип вывода на дисплей времени
+	// Тип формата вывода на дисплей времени
 	switch (lcd_time_format)
 	{
 		case 0:
@@ -1944,34 +1956,59 @@ void lcd_main_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y,
 			sprintf(lcd_buff,"%02u:%02u",sTime.Hours,sTime.Minutes);
 			SSD1306_set_mid_pos(&Font_16x26, lcd_offset_start_x, Poz_line_time_y + lcd_offset_start_y, lcd_buff);
 		break;
+
+		default:
+			sprintf(lcd_buff,"%02u:%02u",sTime.Hours,sTime.Minutes);
+			SSD1306_set_mid_pos(&Font_16x26, lcd_offset_start_x, Poz_line_time_y + lcd_offset_start_y, lcd_buff);
+		break;
 	}
 
 	const uint8_t Temp_pic_size_x = 18;
 	const uint8_t Temp_pic_size_y = 18;
 
-	// Стереть прошлый символ значка температуры
-	SSD1306_DrawFilledRectangle(lcd_offset_start_x + 7, lcd_offset_start_y + Poz_line_info, lcd_offset_start_x + 7 + Temp_pic_size_x, lcd_offset_start_y + Poz_line_info + Temp_pic_size_y, 0);
-	// Вывод на дисплей соотвествующего символа
-	if (Temp >= 0)
+	// Тип формата вывода на дисплей температуры
+	switch (lcd_time_format)
 	{
-		SSD1306_DrawBitmap(lcd_offset_start_x + 7, lcd_offset_start_y + Poz_line_info,Temp_heat_bmp, Temp_pic_size_x, Temp_pic_size_y, 1);
-		sprintf(lcd_buff,"%-2u",Temp);
-	}else
-	{
-		SSD1306_DrawBitmap(lcd_offset_start_x + 7, lcd_offset_start_y + Poz_line_info,Temp_cold_bmp, Temp_pic_size_x, Temp_pic_size_y, 1);
-		sprintf(lcd_buff,"%-2u",Temp * -1);
+		case 3:
+		break;
+
+		default:
+			// Стереть прошлый символ значка температуры
+			SSD1306_DrawFilledRectangle(lcd_offset_start_x + 7, lcd_offset_start_y + Poz_line_info, lcd_offset_start_x + 7 + Temp_pic_size_x, lcd_offset_start_y + Poz_line_info + Temp_pic_size_y, 0);
+			// Вывод на дисплей соотвествующего символа
+			if (Temp >= 0)
+			{
+				SSD1306_DrawBitmap(lcd_offset_start_x + 7, lcd_offset_start_y + Poz_line_info,Temp_heat_bmp, Temp_pic_size_x, Temp_pic_size_y, 1);
+				sprintf(lcd_buff,"%-2u",Temp);
+			}else
+			{
+				SSD1306_DrawBitmap(lcd_offset_start_x + 7, lcd_offset_start_y + Poz_line_info,Temp_cold_bmp, Temp_pic_size_x, Temp_pic_size_y, 1);
+				sprintf(lcd_buff,"%-2u",Temp * -1);
+			}
+
+			SSD1306_GotoXY (lcd_offset_start_x + 27, lcd_offset_start_y + Poz_line_info);
+			SSD1306_Puts (lcd_buff, &Font_11x18, 1);
+		break;
 	}
 
-	SSD1306_GotoXY (lcd_offset_start_x + 27, lcd_offset_start_y + Poz_line_info);
-	SSD1306_Puts (lcd_buff, &Font_11x18, 1);
-
+	// Тип формата вывода на дисплей напряжения
 	// Расчёт напряжения батареи
 	sprintf(lcd_buff,"%-4.1f",((adc_volt[0] * Battery_div) + Battery_diode_cor) + (Vbat_cor * Battery_step_cor));
-	// Отрисовать аккумулятор
-	SSD1306_DrawBitmap(lcd_offset_start_x + 55, lcd_offset_start_y + Poz_line_info,Bat_bmp, 22, 18, 1);
-	SSD1306_GotoXY (lcd_offset_start_x + 78, lcd_offset_start_y + Poz_line_info);
-	SSD1306_Puts (lcd_buff, &Font_11x18, 1);
+	switch (lcd_time_format)
+	{
+		case 3:
+			// Отрисовать аккумулятор
+			SSD1306_DrawBitmap(lcd_offset_start_x + 30, lcd_offset_start_y + Poz_line_info,Bat_bmp, 22, 18, 1);
+			SSD1306_GotoXY (lcd_offset_start_x + 53, lcd_offset_start_y + Poz_line_info);
+		break;
 
+		default:
+			// Отрисовать аккумулятор
+			SSD1306_DrawBitmap(lcd_offset_start_x + 55, lcd_offset_start_y + Poz_line_info,Bat_bmp, 22, 18, 1);
+			SSD1306_GotoXY (lcd_offset_start_x + 78, lcd_offset_start_y + Poz_line_info);
+		break;
+	}
+	SSD1306_Puts (lcd_buff, &Font_11x18, 1);
 	// Обновить экран.
 	SSD1306_UpdateScreen();
 }
@@ -2161,7 +2198,6 @@ uint16_t Delay_int_button(uint16_t delay_ms)
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
 	HAL_ADC_Stop_DMA(&hadc1);
-	ADC_Ready = 1;
 }
 
 void SSD1306_set_mid_pos(FontDef_t *font, int8_t offset_x, uint8_t poz_y, char *Text_data)

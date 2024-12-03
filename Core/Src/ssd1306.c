@@ -162,18 +162,17 @@ void SSD1306_DrawBitmap(int16_t x, int16_t y, const unsigned char* bitmap, int16
 
 uint8_t SSD1306_Init(void) {
 
-	/* Init I2C */
-	
-    for (uint32_t timer = 700; timer > 0; timer--)
-    {
-    }
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_RESET);
+	HAL_Delay(2);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_SET);
+	HAL_Delay(1);
 
 	SSD1306.Initialized = 0;
 	/* Check if LCD connected to I2C */
-	if (HAL_I2C_IsDeviceReady(&hi2c1, SSD1306_I2C_ADDR, 1, 20000) != HAL_OK) {
+	if (HAL_I2C_IsDeviceReady(&hi2c1, SSD1306_I2C_ADDR, 1, 2000) != HAL_OK) {
 		SSD1306.DeviceReady = 0;
 		/* Return false */
-		return 0;
+		return 1;
 	}
 	
 	SSD1306.DeviceReady = 1;
@@ -228,12 +227,12 @@ uint8_t SSD1306_Init(void) {
 	SSD1306.Initialized = 1;
 	
 	/* Return OK */
-	return 1;
+	return 0;
 }
 
 void SSD1306_UpdateScreen(void) {
 	uint8_t m;
-	
+
 	for (m = 0; m < 8; m++) {
 		SSD1306_WRITECOMMAND(0xB0 + m);
 		SSD1306_WRITECOMMAND(0x00);
@@ -632,15 +631,9 @@ void SSD1306_OFF(void) {
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void ssd1306_I2C_Init() {
-	//MX_I2C1_Init();
 	uint32_t p = 250000;
 	while(p>0)
 		p--;
-	//HAL_I2C_DeInit(&hi2c1);
-	//p = 250000;
-	//while(p>0)
-	//	p--;
-	//MX_I2C1_Init();
 }
 
 void ssd1306_I2C_WriteMulti(uint8_t address, uint8_t reg, uint8_t* data, uint16_t count) {
@@ -649,7 +642,13 @@ void ssd1306_I2C_WriteMulti(uint8_t address, uint8_t reg, uint8_t* data, uint16_
 	uint8_t i;
 	for(i = 0; i < count; i++)
 	dt[i+1] = data[i];
-	HAL_I2C_Master_Transmit(&hi2c1, address, dt, count+1, 10);
+	// Если передача данных завершилась с ошибкой, то выполнить переинициализацию
+	if (HAL_I2C_Master_Transmit(&hi2c1, address, dt, count+1, 10) != HAL_OK)
+	{
+		SSD1306.Initialized = 0;
+		SSD1306.DeviceReady = 0;
+		SSD1306_Init();
+	}
 }
 
 
@@ -657,5 +656,11 @@ void ssd1306_I2C_Write(uint8_t address, uint8_t reg, uint8_t data) {
 	uint8_t dt[2];
 	dt[0] = reg;
 	dt[1] = data;
-	HAL_I2C_Master_Transmit(&hi2c1, address, dt, 2, 10);
+	// Если передача данных завершилась с ошибкой, то выполнить переинициализацию
+	if (HAL_I2C_Master_Transmit(&hi2c1, address, dt, 2, 10) != HAL_OK)
+	{
+		SSD1306.Initialized = 0;
+		SSD1306.DeviceReady = 0;
+		SSD1306_Init();
+	}
 }
