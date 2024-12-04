@@ -144,14 +144,18 @@ void SSD1306_set_mid_pos(FontDef_t *font, int8_t offset_x, uint8_t poz_y, char *
 
 void EEPROM_Error_print (uint8_t event_error, uint8_t event_adress, uint8_t eeprom_adress);
 
+void Check_CLK_LSE();
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-const char *firmware_number = "01.52";
+const char *firmware_number = "01.53";
 
 const uint16_t delay_message_info = 2100;
+
+const uint16_t delay_message_warn = 800;
 
 const uint16_t delay_blank_screen = 400;
 
@@ -653,6 +657,8 @@ int main(void)
 		Service_lcd_light(Ilm_start, light_min, light_max);
 		// Сервис проверить двигатель
 		Service_Check_Engine();
+		// Если запуск был от LSI, то проверять появилось ли тактирование от LSE и переключится
+		Check_CLK_LSE();
 
 		Service_update_millis_prev = HAL_GetTick();
 	}
@@ -680,9 +686,18 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+
+  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
-    Error_Handler();
+    // Если запуск не удался, скорее всего проблема LSE. Попробуем запустить от внутреннего кварца
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
+    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+
+    PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+
+    HAL_RCC_OscConfig(&RCC_OscInitStruct);
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
@@ -699,7 +714,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_ADC;
-  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+
   PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV2;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
@@ -835,23 +850,6 @@ static void MX_RTC_Init(void)
   // Добавить строку в файл stm32f1xx_hal_rcc.h
   // #define RCC_FLAG_RTCEN                   ((uint8_t)((BDCR_REG_INDEX << 5U) | RCC_BDCR_RTCEN_Pos))  /*!< RTC Enable */
   // При генрации через куб функцию HAL_RTC_Init необходимо завернуть в условие
-  /*
-  if (__HAL_RCC_GET_FLAG(RCC_FLAG_LSERDY) == RESET || __HAL_RCC_GET_FLAG(RCC_FLAG_RTCEN) == RESET)
-  {
-	  SSD1306_Clear();
-
-	  sprintf(lcd_buff,"* RTC_Init");
-
-	  SSD1306_GotoXY (10,10);
-	  SSD1306_Puts (lcd_buff, &Font_7x10, 1);
-	  SSD1306_UpdateScreen();
-
-	  // Delay
-	  for (uint32_t timer = 600000; timer > 0; timer--)
-	  {
-	  }
-	}
-   */
 
   /* USER CODE END RTC_Init 1 */
 
@@ -860,21 +858,34 @@ static void MX_RTC_Init(void)
   hrtc.Init.AsynchPrediv = RTC_AUTO_1_SECOND;
   hrtc.Init.OutPut = RTC_OUTPUTSOURCE_CALIBCLOCK;
 
-  // Условие включения инициализации RTC
-  if (__HAL_RCC_GET_FLAG(RCC_FLAG_LSERDY) == RESET || __HAL_RCC_GET_FLAG(RCC_FLAG_RTCEN) == RESET)
+  SSD1306_Clear();
+
+  uint8_t LCD_Y_counter = 10;
+
+  if ((RCC->CSR & RCC_CSR_LSION) == RCC_CSR_LSION)
   {
-	  SSD1306_Clear();
+	  sprintf(lcd_buff,"[*] OSC -> LSI");
 
-	  sprintf(lcd_buff,"* RTC_Init");
-
-	  SSD1306_GotoXY (10,10);
+	  SSD1306_GotoXY (10, LCD_Y_counter);
+	  LCD_Y_counter += 15;
 	  SSD1306_Puts (lcd_buff, &Font_7x10, 1);
 	  SSD1306_UpdateScreen();
 
 	  // Delay
-	  for (uint32_t timer = 600000; timer > 0; timer--)
-	  {
-	  }
+	  HAL_Delay(delay_message_warn);
+  }
+
+  // Условие включения инициализации RTC
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_LSERDY) == RESET || __HAL_RCC_GET_FLAG(RCC_FLAG_RTCEN) == RESET)
+  {
+	  sprintf(lcd_buff,"[*] RTC_Init");
+
+	  SSD1306_GotoXY (10, LCD_Y_counter);
+	  SSD1306_Puts (lcd_buff, &Font_7x10, 1);
+	  SSD1306_UpdateScreen();
+
+	  // Delay
+	  HAL_Delay(delay_message_warn);
 
 	  if (HAL_RTC_Init(&hrtc) != HAL_OK)
 	  {
@@ -2203,6 +2214,38 @@ void SSD1306_set_mid_pos(FontDef_t *font, int8_t offset_x, uint8_t poz_y, char *
 {
 	SSD1306_GotoXY ((SSD1306_WIDTH / 2 - (strlen(lcd_buff) * font->FontWidth / 2)) + offset_x, poz_y);
 	SSD1306_Puts (lcd_buff, font, 1);
+}
+
+void Check_CLK_LSE()
+{
+	if ((RCC->CSR & RCC_CSR_LSION) == RCC_CSR_LSION)
+	{
+		if (__HAL_RCC_GET_FLAG(RCC_FLAG_LSERDY) != RESET)
+		{
+			RTC_TimeTypeDef sTime;
+			HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+
+			__HAL_RCC_LSI_DISABLE();
+
+			SystemClock_Config();
+
+			HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+
+			SSD1306_Clear();
+
+			uint8_t LCD_Y_counter = 10;
+
+			sprintf(lcd_buff,"[*] OSC -> LSE");
+
+			SSD1306_GotoXY (10, LCD_Y_counter);
+			SSD1306_Puts (lcd_buff, &Font_7x10, 1);
+			SSD1306_UpdateScreen();
+
+			HAL_Delay (delay_message_warn);
+
+			SSD1306_Clear();
+		}
+    }
 }
 
 /* USER CODE END 4 */
