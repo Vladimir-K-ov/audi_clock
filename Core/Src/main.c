@@ -151,7 +151,7 @@ void Check_CLK_LSE();
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-const char *firmware_number = "01.53";
+const char *firmware_number = "01.54";
 
 const uint16_t delay_message_info = 2100;
 
@@ -2025,7 +2025,7 @@ void lcd_main_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y,
 
 void lcd_drive_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y)
 {
-	uint16_t Delay_screen_drive = 3000;
+	uint16_t Delay_screen_drive = 5000;
 
 	uint32_t Seconds = RTC_Seconds;
 
