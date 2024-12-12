@@ -151,7 +151,7 @@ void Check_CLK_LSE();
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-const char *firmware_number = "01.54";
+const char *firmware_number = "01.55";
 
 const uint16_t delay_message_info = 2100;
 
@@ -221,6 +221,7 @@ const uint8_t Rest_warning_time_max = 255;
 const uint8_t lcd_drive_screen_update_min = 0;
 const uint8_t lcd_drive_screen_update_max = 255;
 const uint16_t lcd_drive_screen_update_mult = 60000;
+const uint16_t Delay_screen_drive = 5000;
 
 const int8_t RTC_cor_min = -127;
 const int8_t RTC_cor_max = 0;
@@ -236,6 +237,10 @@ const uint8_t time_format_print_max = 3;
 // Номер регистра бэкап для моточасов
 const uint32_t Sec_BKP_reg_Low = 1;
 const uint32_t Sec_BKP_reg_Hi = 2;
+
+// Номер регистра бэкап для сохранения времени в пути
+const uint32_t drive_time_h_BKP_reg = 3;
+const uint32_t drive_time_m_BKP_reg = 4;
 
 const uint8_t Engine_Hourse_Mul = 10;
 
@@ -308,7 +313,7 @@ int main(void)
   // коректировка часов
   int8_t RTC_cor;
 
-  // время отображения времени в пути.
+  // Через какое время отображать время в пути.
   uint8_t lcd_drive_screen_update;
 
   // коректировка RTC
@@ -359,7 +364,6 @@ int main(void)
   HAL_RTCEx_SetSmoothCalib(&hrtc,0,0,-1 * RTC_cor);
 
   HAL_PWR_EnableBkUpAccess();
-  HAL_RTCEx_SetSecond_IT(&hrtc);
 
   // Запуск дисплея и вывод лого
   SSD1306_Clear();
@@ -381,11 +385,22 @@ int main(void)
   HAL_Delay(delay_start_logo);
   SSD1306_Clear();
 
-  HAL_TIM_Base_Start_IT(&htim2);
+  // Установка действительной подсветки.
+  Service_lcd_light(Ilm_start, light_min, light_max);
+
+  // Вывод на экран последнего времени в пути
+  if (lcd_drive_screen_update > 0)
+  {
+	  lcd_drive_screen_print(lcd_offset_start_x, lcd_offset_start_y + 8);
+  }
+  HAL_RTCEx_BKUPWrite(&hrtc, drive_time_h_BKP_reg, 0);
+  HAL_RTCEx_BKUPWrite(&hrtc, drive_time_h_BKP_reg, 0);
 
   // Проверить моточасы
   Service_Engine_Hours();
 
+  HAL_TIM_Base_Start_IT(&htim2);
+  HAL_RTCEx_SetSecond_IT(&hrtc);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -1099,13 +1114,22 @@ static void MX_GPIO_Init(void)
 
 void HAL_RTCEx_RTCEventCallback(RTC_HandleTypeDef *hrtc)
 {
-	// Ограничить инкрементирование минут до 99 часов и 59 минут.
+	// Ограничить инкрементирование секунд до 99 часов и 59 минут.
 	if (RTC_Seconds < 359940)
 	{
 		RTC_Seconds++;
 	}
 
-	// Запись секунд в бекап регистр
+	// Запись времени в пути
+	uint8_t drive_time_h;
+	uint8_t drive_time_m;
+
+	drive_time_h = RTC_Seconds / 3600;
+	drive_time_m = (RTC_Seconds - (drive_time_h * 3600)) / 60 ;
+	HAL_RTCEx_BKUPWrite(hrtc, drive_time_h_BKP_reg, drive_time_h);
+	HAL_RTCEx_BKUPWrite(hrtc, drive_time_m_BKP_reg, drive_time_m);
+
+	// Запись секунд в бекап регистр моточасов
 	uint16_t Sec_BKP_Hi;
 	uint16_t Sec_BKP_Low;
 
@@ -2025,15 +2049,11 @@ void lcd_main_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y,
 
 void lcd_drive_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y)
 {
-	uint16_t Delay_screen_drive = 5000;
-
-	uint32_t Seconds = RTC_Seconds;
-
 	uint8_t drive_time_h;
 	uint8_t drive_time_m;
 
-	drive_time_h = Seconds / 3600;
-	drive_time_m = (Seconds - (drive_time_h * 3600)) / 60 ;
+	drive_time_h = (uint8_t) HAL_RTCEx_BKUPRead(&hrtc, drive_time_h_BKP_reg);
+	drive_time_m = (uint8_t) HAL_RTCEx_BKUPRead(&hrtc, drive_time_m_BKP_reg);
 
 	sprintf(lcd_buff,".%02u:%02u ",drive_time_h,drive_time_m);
 	SSD1306_set_mid_pos(&Font_16x26, lcd_offset_start_x, lcd_offset_start_y + Poz_line_time_y, lcd_buff);
@@ -2041,10 +2061,7 @@ void lcd_drive_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y
 	// Обновить экран.
 	SSD1306_UpdateScreen();
 
-	if (Delay_screen_drive > 0)
-	{
-		Delay_int_button(delay_message_info);
-	}
+	Delay_int_button(Delay_screen_drive);
 
 	// Очистить строку времени
 	sprintf(lcd_buff,"        ");
