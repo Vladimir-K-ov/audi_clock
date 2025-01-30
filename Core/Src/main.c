@@ -107,7 +107,7 @@ static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 
 void lcd_main_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y, uint8_t lcd_time_format, int8_t Temp , int8_t Vbat_cor);
-void lcd_drive_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y);
+void lcd_drive_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y, uint8_t lcd_drive_screen_update);
 void lcd_info_screen(uint8_t Rest_warning_time);
 void lcd_on_off(uint8_t LCD_Light_Current);
 void Set_RTC_h_up();
@@ -151,7 +151,7 @@ void Check_CLK_LSE();
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-const char *firmware_number = "01.55";
+const char *firmware_number = "01.57";
 
 const uint16_t delay_message_info = 2100;
 
@@ -220,7 +220,7 @@ const uint8_t Rest_warning_time_max = 255;
 
 const uint8_t lcd_drive_screen_update_min = 0;
 const uint8_t lcd_drive_screen_update_max = 255;
-const uint16_t lcd_drive_screen_update_mult = 60000;
+const uint16_t lcd_drive_screen_update_mult = 60;
 const uint16_t Delay_screen_drive = 5000;
 
 const int8_t RTC_cor_min = -127;
@@ -389,10 +389,14 @@ int main(void)
   Service_lcd_light(Ilm_start, light_min, light_max);
 
   // Вывод на экран последнего времени в пути
-  if (lcd_drive_screen_update > 0)
-  {
-	  lcd_drive_screen_print(lcd_offset_start_x, lcd_offset_start_y + 8);
-  }
+  sprintf(lcd_buff,".%02u:%02u ", (uint8_t)HAL_RTCEx_BKUPRead(&hrtc, drive_time_h_BKP_reg), (uint8_t)HAL_RTCEx_BKUPRead(&hrtc, drive_time_m_BKP_reg));
+  SSD1306_set_mid_pos(&Font_16x26, lcd_offset_start_x, lcd_offset_start_y + Poz_line_time_y + 8, lcd_buff);
+  SSD1306_UpdateScreen();
+  Delay_int_button(Delay_screen_drive);
+  SSD1306_Clear();
+  SSD1306_UpdateScreen();
+
+  // Обнулить время последней поездки
   HAL_RTCEx_BKUPWrite(&hrtc, drive_time_h_BKP_reg, 0);
   HAL_RTCEx_BKUPWrite(&hrtc, drive_time_h_BKP_reg, 0);
 
@@ -425,23 +429,11 @@ int main(void)
 
 	if (lcd_update_execute >= lcd_main_screen_update)
 	{
+		// Вывод основного экрана на дисплей
 		lcd_main_screen_print(lcd_offset_start_x, lcd_offset_start_y, time_format_print, Service_Temp(ADC_channel_Temp_select, Temp_cor), Vbat_cor);
+		// Вывод времени за рулём (функция lcd_drive_screen_print, период задаётся переменной lcd_drive_screen_update )
+		lcd_drive_screen_print(lcd_offset_start_x, lcd_offset_start_y, lcd_drive_screen_update);
 		lcd_update_millis_prev = HAL_GetTick();
-	}
-
-	// Вывод на оcновной экран времени за рулём
-	uint32_t lcd_drive_millis_current = 0;
-	uint32_t lcd_drive_execute = 0;
-	static uint32_t lcd_drive_millis_prev = 0;
-
-	lcd_drive_millis_current = HAL_GetTick();
-	lcd_drive_execute = lcd_drive_millis_current - lcd_drive_millis_prev;
-
-	if (lcd_drive_screen_update > 0 && lcd_drive_execute >= (lcd_drive_screen_update * lcd_drive_screen_update_mult))
-	{
-		lcd_drive_screen_print(lcd_offset_start_x, lcd_offset_start_y);
-		lcd_main_screen_print(lcd_offset_start_x, lcd_offset_start_y, time_format_print, Service_Temp(ADC_channel_Temp_select, Temp_cor), Vbat_cor);
-		lcd_drive_millis_prev = HAL_GetTick();
 	}
 
 	// Обработка кнопок
@@ -2047,26 +2039,30 @@ void lcd_main_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y,
 	SSD1306_UpdateScreen();
 }
 
-void lcd_drive_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y)
+void lcd_drive_screen_print(int8_t lcd_offset_start_x, int8_t lcd_offset_start_y, uint8_t lcd_drive_screen_update)
 {
-	uint8_t drive_time_h;
-	uint8_t drive_time_m;
+	static uint32_t RTC_Seconds_screen_prev = 0;
 
-	drive_time_h = (uint8_t) HAL_RTCEx_BKUPRead(&hrtc, drive_time_h_BKP_reg);
-	drive_time_m = (uint8_t) HAL_RTCEx_BKUPRead(&hrtc, drive_time_m_BKP_reg);
+	if (lcd_drive_screen_update > 0)
+	{
+		if ((RTC_Seconds - RTC_Seconds_screen_prev) >= (lcd_drive_screen_update * lcd_drive_screen_update_mult))
+		{
+			RTC_Seconds_screen_prev = RTC_Seconds;
 
-	sprintf(lcd_buff,".%02u:%02u ",drive_time_h,drive_time_m);
-	SSD1306_set_mid_pos(&Font_16x26, lcd_offset_start_x, lcd_offset_start_y + Poz_line_time_y, lcd_buff);
+			sprintf(lcd_buff,".%02u:%02u ", (uint8_t)HAL_RTCEx_BKUPRead(&hrtc, drive_time_h_BKP_reg), (uint8_t)HAL_RTCEx_BKUPRead(&hrtc, drive_time_m_BKP_reg));
+			SSD1306_set_mid_pos(&Font_16x26, lcd_offset_start_x, lcd_offset_start_y + Poz_line_time_y, lcd_buff);
 
-	// Обновить экран.
-	SSD1306_UpdateScreen();
+			// Обновить экран.
+			SSD1306_UpdateScreen();
 
-	Delay_int_button(Delay_screen_drive);
+			Delay_int_button(Delay_screen_drive);
 
-	// Очистить строку времени
-	sprintf(lcd_buff,"        ");
-	SSD1306_GotoXY (0, lcd_offset_start_y + Poz_line_time_y);
-	SSD1306_Puts (lcd_buff, &Font_16x26, 1);
+			// Очистить строку времени
+			sprintf(lcd_buff,"        ");
+			SSD1306_GotoXY (0, lcd_offset_start_y + Poz_line_time_y);
+			SSD1306_Puts (lcd_buff, &Font_16x26, 1);
+		}
+	}
 }
 
 void lcd_info_screen(uint8_t Rest_warning_time)
